@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <div>
+        <div id="messageArea"></div>
+        <button onclick="createGame()" id='btnCreate'>create Game</button>
+        <section>
+            <input type='text' id='txtGameId'>
+            <button id='btnJoin' onclick="joinGame()">Join Game</button>
+        </section>
+        <div id='divPlayers'></div>
+        <div id='divBoard'></div>
+    </div>
+
+    <script>
+        let clientId = null;
+        let gameId = null;
+        let playerColor = null;
+
+        const messageArea = document.getElementById("messageArea");
+        const btnCreate = document.getElementById("btnCreate");
+        const btnJoin = document.getElementById("btnJoin");
+        const txtGameId = document.getElementById("txtGameId");
+        const divPlayers = document.getElementById("divPlayers");
+        const divBoard = document.getElementById("divBoard");
+
+        const ws = new WebSocket("ws://localhost:8080")
+
+        function joinGame() {
+            if (gameId === null) gameId = txtGameId.value;
+
+            const payLoad = {
+                "method": "join",
+                "clientId": clientId,
+                "gameId": gameId
+            }
+            console.log(payLoad)
+            ws.send(JSON.stringify(payLoad));
+        }
+        function createGame() {
+            const payLoad = {
+                "method": "create",
+                "clientId": clientId
+            }
+            ws.send(JSON.stringify(payLoad));
+        }
+
+        // WebSocket onopen event
+        ws.onopen = () => {
+            messageArea.innerHTML += "<p>WebSocket connection established.</p>";
+        };
+
+        // WebSocket onmessage event
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data)
+
+            switch (data.method) {
+                case "connect": {
+                    clientId = data.clientId
+                    break;
+                }
+                case "create": {
+                    gameId = data.game.id
+                    messageArea.innerHTML += "<p>game successfully created with id " + data.game.id + " with " + data.game.balls + " balls and people" + data.game.clients.length + "</p>"
+                    btnCreate.remove()
+                    break;
+                }
+                case "join": {
+                    const game = data.game;
+
+                    while (divPlayers.firstChild)
+                        divPlayers.removeChild(divPlayers.firstChild)
+
+                    game.clients.forEach(c => {
+                        const d = document.createElement("p");
+                        d.style.background = c.color
+                        d.textContent = c.clientId;
+                        divPlayers.appendChild(d);
+
+                        if (c.clientId === clientId) {
+                            playerColor = c.color
+                            d.style.border = `thick solid black`
+                        };
+                    })
+
+                    while (divBoard.firstChild)
+                        divBoard.removeChild(divBoard.firstChild)
+
+                    for (let i = 0; i < game.balls; i++) {
+                        const b = document.createElement("button");
+                        b.id = "ball" + (i + 1);
+                        b.tag = i + 1
+                        b.textContent = i + 1
+                        b.style.width = "150px"
+                        b.style.height = "150px"
+                        b.addEventListener("click", e => {
+                            b.style.background = playerColor
+                            const payLoad = {
+                                "method": "play",
+                                "clientId": clientId,
+                                "gameId": gameId,
+                                "ballId": b.tag,
+                                "color": playerColor
+                            }
+                            ws.send(JSON.stringify(payLoad))
+                        })
+                        divBoard.appendChild(b);
+                    }
+                    break
+                }
+                case "update": {
+                    console.log(data);
+                    if (!data.game.state) return;
+                    for (const b of Object.keys(data.game.state)) {
+                        const color = data.game.state[b];
+                        const ballObject = document.getElementById("ball" + b);
+                        ballObject.style.backgroundColor = color
+                    }
+                    break;
+                }
+                case "error": {
+                    messageArea.innerHTML = `<p>${data.msg}</p>`
+                    break
+                }
+                default:
+                    console.log(data);
+                    break;
+            }
+
+        };
+
+        // WebSocket onclose event
+        ws.onclose = () => {
+            messageArea.innerHTML = "<p>WebSocket connection closed.</p>";
+        };
+
+    </script>
+</body>
+
+</html>
